@@ -1,0 +1,5 @@
+#!/bin/bash
+set -e
+jupyter contrib nbextension install --user
+jupyter nbextension enable hinterland/hinterland
+jupyter labextension install jupyterlab_vim @rahlir/theme-gruvbox

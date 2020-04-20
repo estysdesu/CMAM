@@ -1,0 +1,15 @@
+FROM jupyter/minimal-notebook:latest
+WORKDIR $HOME/work
+# ENV JUPYTER_ENABLE_LAB yes
+
+COPY requirements.txt /tmp/
+RUN python -m pip install -r /tmp/requirements.txt
+COPY requirements.user.txt /tmp/
+RUN python -m pip install -r /tmp/requirements.user.txt
+
+COPY postBuild /tmp/
+RUN sh /tmp/postBuild
+COPY postBuild.user /tmp/
+RUN sh /tmp/postBuild.user
+
+COPY overrides.json /opt/conda/share/jupyter/lab/settings/
