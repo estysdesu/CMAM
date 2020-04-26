@@ -10,16 +10,22 @@ function [p] = slicer(f, v, z_slice, th, show)
 %       show [bool] - whether or not to plot
 %   Outputs:
 %       p (points) [3xn array] - the points on z slice plane
+
 %% Initialize
 if nargin < 4
     error('not enough arguments')
 elseif nargin == 4
-    show = 1;
+    show = true;
 end
+
+% TRI_SIZE = 3;
+% DIR_SIZE = size(v, 2);
+
 %% Step II
 z_max = max(v(:, 3));
 z_min = min(v(:, 3));
 layer_cnt = (z_max - z_min) / th;                           % number of layers
+
 %% Step III
 target_faces = [];
 for i = 1:size(f, 1)                                        % for face
@@ -29,6 +35,7 @@ for i = 1:size(f, 1)                                        % for face
         target_faces = [target_faces; f(i, :)];             % then that face is part of slice
     end
 end
+
 %% Step IV
 t = zeros(size(target_faces, 1), 3);                        % preallocate
 for i = 1:size(target_faces, 1)                             % for target_face
@@ -40,6 +47,7 @@ for i = 1:size(target_faces, 1)                             % for target_face
     tt(3) = (z_slice - z(3)) / (z(1) - z(3));               % ratio along edge 3
     t(i, :) = tt;                                           % store ratios along 3 edges for each target_face
 end
+
 %% Step V
 r = zeros(3, 3, size(target_faces, 1));                     % rows:vertexes, cols:directions, aisles:faces
 for i = 1:size(target_faces, 1)
@@ -71,6 +79,7 @@ for i = 1:size(target_faces, 1)
         r(3, :, i) = zeros(1, 3);
     end
 end
+
 %% Step VI
 for i = 1:size(r, 3)                                        % for face indexes
     vv = r(:, :, i);                                        % rows:vertexes, cols:directions
@@ -85,30 +94,74 @@ for i = 1:size(r, 3)                                        % for face indexes
         r(:, :, i) = zeros(3, 3);                           % then drop the face (zeros will drop out later)
     end
 end
-%% Step VII
-p = zeros(size(r, 1)*size(r, 3), size(r, 2));               % 3D array -> 2D array (couldn't get reshape to work how I needed)
-for i = 1:size(r, 3)
-    j = (i - 1) * 3 + 1;                                    % i = 1, j = 1 -> 3; i = 2, j = 4 -> 6; etc.
-    p(j:j+2, :) = r(:, :, i);
-end
-% p_indx = find(~all(p, 2) == 0);                             % find nonzero rows
-% p = p(p_indx, :); % mask out/drop zero-filled rows
-% p = unique(p, 'stable', 'rows');                            % drop non-unique rows/vertexes ('stable' stops unique from sorting)
 
-contours = [];
-for i = 1:size(p, 1)
-    pToFind = p(i, :);
-    [~, row_indx] = ismember(pToFind, p, 'rows')
+%% Step VII
+rr = zeros(2, size(r, 2), size(r, 3));                      % 3-by-3-by-points -> 2-by-3-by-points; drop zero-filled row
+for i = 1:size(r, 3)
+    if r(1, :, i) == zeros(1, 3)
+        rr(:, :, i) = r(2:3, :, i);
+    elseif r(2, :, i) == zeros(1, 3)
+        rr(:, :, i) = r([1, 3], :, i);
+    else
+        rr(:, :, i) = r(1:2, :, i);
+    end
 end
-    
+r = rr;                                                     % this is an overwrite; original no longer needed
+
+% contour_groups = {};
+contour_faces = [];
+face_indx = 1;
+while 1
+    contour_faces = [contour_faces, face_indx];
+    ptToFind = r(end, :, contour_faces(end));
+    for i = 1:size(r, 3)
+        if length(find(contour_faces == i)) ~= 0            % if this face has already been used
+            continue                                        % then skip it
+        end
+        if norm(r(1, :, i) - ptToFind) < 1e-5              % if a face's first value is a match
+            face_indx = i;                                  % then set that face to be the next face index
+            break
+        elseif norm(r(end, :, i) - ptToFind) < 1e-5        % if a face's second value is a match
+            r_temp = r(1, :, i);                            % then swap the first and second value
+            r(1, :, i) = r(end, :, i);
+            r(end, :, i) = r_temp;
+            face_indx = i;                                  % and set that face to be the next face index
+            break
+        end
+%         if i == size(r, 3)                                  % if there are no matches
+%             contour_groups = {contour_groups{:}, contour_faces};  % then it must be a new contour
+%             contour_faces = [];
+%             face_indx = 0; % not sure what to put here
+%         end
+    end
+    if contour_faces(end) == face_indx                      % if face_indx is never set
+        break                                               % then no more matches -> exit
+    end
+end
+
+p = zeros(size(r, 1)*size(r, 3), size(r, 2));               % 3D array -> 2D array (couldn't get reshape to work how I needed)
+% for i = 1:size(r, 3)
+%     j = (i - 1) * size(r, 1) + 1;                           % i = 1, j = 1 -> 2; i = 2, j = 3 -> 4; etc.
+%     p(j:j+size(r, 1)-1, :) = r(:, :, i);
+% end
+for i = 1:size(contour_faces, 2)
+    j = (i - 1) * size(r, 1) + 1;                           % i = 1, j = 1 -> 2; i = 2, j = 3 -> 4; etc.
+    p(j:j+size(r, 1)-1, :) = r(:, :, contour_faces(i));
+end
+for i = 2:size(p, 1)-1
+    if norm( p(i, :) - p(i-1, :) ) < 1e-5 || norm( p(i, :) - p(i+1, :) ) < 1e-5
+        p(i, :) = zeros(1, 3);
+    end
+end
+p = p(any(p, 2), :);                                        % drop zeros
 %% Post
-if show == 1
+if show == true
     figure()
     
     subplot(1, 2, 1)
-    plot3(p(:, 1), p(:, 2), p(:, 3), 'r*'), hold on
+    plot3(p(:, 1), p(:, 2), p(:, 3), 'r', 'linewidth', 1.5), hold on
     patch('vertices', v, 'faces', f, 'facecolor', 'k'), hold off
-    title('Vertexes on Slicing Plane on Object')
+    title('Profile from Slicing Plane Projected on Object')
     grid on, axis square
     
     subplot(1, 2, 2)
